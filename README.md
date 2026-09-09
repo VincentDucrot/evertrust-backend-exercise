@@ -36,7 +36,7 @@ Create the schema and a dedicated user:
 
 ```sql
 CREATE DATABASE fleet CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'fleet'@'localhost' IDENTIFIED BY 'changeme';
+CREATE USER 'fleet'@'localhost' IDENTIFIED BY 'password';
 GRANT ALL PRIVILEGES ON fleet.* TO 'fleet'@'localhost';
 FLUSH PRIVILEGES;
 ```
