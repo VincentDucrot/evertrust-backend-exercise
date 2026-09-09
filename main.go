@@ -92,6 +92,23 @@ func main() {
 				},
 			)
 		})
+		r.Delete("/{token}", func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+
+			plaintext := chi.URLParam(r, "token")
+			hash := sha256.Sum256([]byte(plaintext))
+
+			_, err := db.ExecContext(ctx, `DELETE FROM token WHERE hash=?`, hash[:])
+			if err != nil {
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			w.WriteHeader(http.StatusNoContent)
+		})
 	})
 
 	http.ListenAndServe(":3333", r) // TODO: change this to a config
