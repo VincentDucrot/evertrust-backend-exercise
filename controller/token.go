@@ -14,11 +14,15 @@ import (
 )
 
 type TokenController struct {
-	db *sqlx.DB
+	db            *sqlx.DB
+	tokenDuration time.Duration
 }
 
-func NewTokenController(db *sqlx.DB) *TokenController {
-	return &TokenController{db: db}
+func NewTokenController(db *sqlx.DB, tokenDuration time.Duration) *TokenController {
+	return &TokenController{
+		db:            db,
+		tokenDuration: tokenDuration,
+	}
 }
 
 func (controller *TokenController) CreateToken(w http.ResponseWriter, r *http.Request) {
@@ -28,7 +32,7 @@ func (controller *TokenController) CreateToken(w http.ResponseWriter, r *http.Re
 
 	token := entity.Token{
 		Hash:      hash[:],
-		ExpiresAt: time.Now().Add(time.Minute * 10), // TODO: change this to a config
+		ExpiresAt: time.Now().Add(controller.tokenDuration),
 	}
 
 	_, err := controller.db.ExecContext(ctx, `INSERT INTO token(hash, expires_at) VALUES (?, ?)`, token.Hash, token.ExpiresAt)
@@ -45,7 +49,7 @@ func (controller *TokenController) CreateToken(w http.ResponseWriter, r *http.Re
 	json.NewEncoder(w).Encode(
 		map[string]string{
 			"token":      plaintext,
-			"expiration": time.Now().Add(time.Minute * 10).Format(time.RFC3339),
+			"expiration": token.ExpiresAt.Format(time.RFC3339),
 		},
 	)
 }

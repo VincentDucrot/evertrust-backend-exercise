@@ -19,6 +19,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	generalConfig := config.LoadGeneralConfig()
 
 	db, err := sqlx.Connect("mysql", fmt.Sprintf("%s:%s@%s?parseTime=true", dbConfig.Username, dbConfig.Password, dbConfig.Url))
 	if err != nil {
@@ -28,7 +29,7 @@ func main() {
 
 	authenticator := middleware2.NewAuthenticator(db)
 
-	tokenController := controller.NewTokenController(db)
+	tokenController := controller.NewTokenController(db, generalConfig.TokenDuration)
 	carController := controller.NewCarController(db)
 	garageController := controller.NewGarageController(db)
 
@@ -55,5 +56,6 @@ func main() {
 		r.Post("/", garageController.Create)
 	})
 
-	http.ListenAndServe(":3333", r) // TODO: change this to a config
+	log.Printf("Server is running on port %s\n", generalConfig.Port)
+	http.ListenAndServe(fmt.Sprintf(":%s", generalConfig.Port), r)
 }
