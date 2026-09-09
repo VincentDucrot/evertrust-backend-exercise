@@ -18,21 +18,21 @@ func NewTokenRepo(db *sqlx.DB) *TokenRepo {
 	}
 }
 
-func (repo *TokenRepo) Create(ctx context.Context, hash []byte, expiresAt time.Time) error {
-	_, err := repo.db.ExecContext(ctx, `INSERT INTO token(hash, expires_at) VALUES (?, ?)`, hash, expiresAt)
+func (repo *TokenRepo) Create(ctx context.Context, hash [32]byte, expiresAt time.Time) error {
+	_, err := repo.db.ExecContext(ctx, `INSERT INTO token(hash, expires_at) VALUES (?, ?)`, hash[:], expiresAt)
 	return err
 }
 
-func (repo *TokenRepo) Get(ctx context.Context, hash []byte) (*entity.Token, error) {
+func (repo *TokenRepo) Get(ctx context.Context, hash [32]byte) (*entity.Token, error) {
 	var token entity.Token
-	err := repo.db.GetContext(ctx, &token, "SELECT hash, expires_at, created_at FROM token WHERE hash = ?", hash)
+	err := repo.db.GetContext(ctx, &token, "SELECT hash, expires_at, created_at FROM token WHERE hash = ?", hash[:])
 	if err != nil {
 		return nil, err
 	}
 	return &token, nil
 }
 
-func (repo *TokenRepo) Delete(ctx context.Context, hash []byte) error {
-	_, err := repo.db.ExecContext(ctx, `DELETE FROM token WHERE hash=?`, hash)
+func (repo *TokenRepo) Delete(ctx context.Context, hash [32]byte) error {
+	_, err := repo.db.ExecContext(ctx, `DELETE FROM token WHERE hash=?`, hash[:])
 	return err
 }

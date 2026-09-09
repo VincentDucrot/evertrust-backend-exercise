@@ -30,7 +30,7 @@ func (controller *TokenController) CreateToken(w http.ResponseWriter, r *http.Re
 	plaintext, hash := service.NewToken()
 	expiration := time.Now().Add(controller.tokenDuration)
 
-	err := controller.tokenRepo.Create(ctx, hash[:], expiration)
+	err := controller.tokenRepo.Create(ctx, hash, expiration)
 	if err != nil {
 		log.Println(err)
 		w.Header().Set("Content-Type", "application/problem+json")
@@ -55,7 +55,7 @@ func (controller *TokenController) GetToken(w http.ResponseWriter, r *http.Reque
 	plaintext := chi.URLParam(r, "token")
 	hash := sha256.Sum256([]byte(plaintext))
 
-	token, err := controller.tokenRepo.Get(ctx, hash[:])
+	token, err := controller.tokenRepo.Get(ctx, hash)
 	if err != nil {
 		log.Println(err)
 		w.Header().Set("Content-Type", "application/problem+json")
@@ -86,7 +86,7 @@ func (controller *TokenController) DeleteToken(w http.ResponseWriter, r *http.Re
 	plaintext := chi.URLParam(r, "token")
 	hash := sha256.Sum256([]byte(plaintext))
 
-	err := controller.tokenRepo.Delete(ctx, hash[:])
+	err := controller.tokenRepo.Delete(ctx, hash)
 	if err != nil {
 		log.Println(err)
 		w.Header().Set("Content-Type", "application/problem+json")
