@@ -22,4 +22,4 @@ Include a file explaining how to build and run your application.
 
 ## Specification
 
-The full API contract is defined in [`openapi.yaml`](./openapi.yaml). It contains all the details on endpoints, request/response schemas, authentication.
+The full API contract is defined in [`openapi.yaml`](openapi.yaml). It contains all the details on endpoints, request/response schemas, authentication.
