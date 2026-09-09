@@ -3,6 +3,7 @@ package main
 import (
 	"evertrust-backend-exercise/config"
 	"evertrust-backend-exercise/controller"
+	"evertrust-backend-exercise/datastore/mysql"
 	middleware2 "evertrust-backend-exercise/middleware"
 	"fmt"
 	"log"
@@ -29,7 +30,9 @@ func main() {
 
 	authenticator := middleware2.NewAuthenticator(db)
 
-	tokenController := controller.NewTokenController(db, generalConfig.TokenDuration)
+	tokenRepo := mysql.NewTokenRepo(db)
+
+	tokenController := controller.NewTokenController(tokenRepo, generalConfig.TokenDuration)
 	carController := controller.NewCarController(db)
 	garageController := controller.NewGarageController(db)
 

@@ -3,24 +3,23 @@ package controller
 import (
 	"crypto/sha256"
 	"encoding/json"
-	"evertrust-backend-exercise/entity"
+	"evertrust-backend-exercise/interfaces"
 	"evertrust-backend-exercise/service"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jmoiron/sqlx"
 )
 
 type TokenController struct {
-	db            *sqlx.DB
+	tokenRepo     interfaces.TokenRepository
 	tokenDuration time.Duration
 }
 
-func NewTokenController(db *sqlx.DB, tokenDuration time.Duration) *TokenController {
+func NewTokenController(tokenRepo interfaces.TokenRepository, tokenDuration time.Duration) *TokenController {
 	return &TokenController{
-		db:            db,
+		tokenRepo:     tokenRepo,
 		tokenDuration: tokenDuration,
 	}
 }
@@ -29,13 +28,9 @@ func (controller *TokenController) CreateToken(w http.ResponseWriter, r *http.Re
 	ctx := r.Context()
 
 	plaintext, hash := service.NewToken()
+	expiration := time.Now().Add(controller.tokenDuration)
 
-	token := entity.Token{
-		Hash:      hash[:],
-		ExpiresAt: time.Now().Add(controller.tokenDuration),
-	}
-
-	_, err := controller.db.ExecContext(ctx, `INSERT INTO token(hash, expires_at) VALUES (?, ?)`, token.Hash, token.ExpiresAt)
+	err := controller.tokenRepo.Create(ctx, hash[:], expiration)
 	if err != nil {
 		log.Println(err)
 		w.Header().Set("Content-Type", "application/problem+json")
@@ -49,7 +44,7 @@ func (controller *TokenController) CreateToken(w http.ResponseWriter, r *http.Re
 	json.NewEncoder(w).Encode(
 		map[string]string{
 			"token":      plaintext,
-			"expiration": token.ExpiresAt.Format(time.RFC3339),
+			"expiration": expiration.Format(time.RFC3339),
 		},
 	)
 }
@@ -59,9 +54,8 @@ func (controller *TokenController) GetToken(w http.ResponseWriter, r *http.Reque
 
 	plaintext := chi.URLParam(r, "token")
 	hash := sha256.Sum256([]byte(plaintext))
-	token := entity.Token{}
 
-	err := controller.db.GetContext(ctx, &token, "SELECT hash, expires_at, created_at FROM token WHERE hash = ?", hash[:])
+	token, err := controller.tokenRepo.Get(ctx, hash[:])
 	if err != nil {
 		log.Println(err)
 		w.Header().Set("Content-Type", "application/problem+json")
@@ -92,7 +86,7 @@ func (controller *TokenController) DeleteToken(w http.ResponseWriter, r *http.Re
 	plaintext := chi.URLParam(r, "token")
 	hash := sha256.Sum256([]byte(plaintext))
 
-	_, err := controller.db.ExecContext(ctx, `DELETE FROM token WHERE hash=?`, hash[:])
+	err := controller.tokenRepo.Delete(ctx, hash[:])
 	if err != nil {
 		log.Println(err)
 		w.Header().Set("Content-Type", "application/problem+json")
