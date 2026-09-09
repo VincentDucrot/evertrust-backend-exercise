@@ -167,7 +167,7 @@ func main() {
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 
-			type listCardsResp struct {
+			type listCarsResp struct {
 				Numberplate string `json:"numberplate"`
 				Model       string `json:"model"`
 				Color       string `json:"color"`
@@ -186,9 +186,9 @@ func main() {
 			}
 
 			// TODO: Make function
-			resp := make([]listCardsResp, len(cars))
+			resp := make([]listCarsResp, len(cars))
 			for i, car := range cars {
-				resp[i] = listCardsResp{
+				resp[i] = listCarsResp{
 					Numberplate: car.Numberplate,
 					Model:       car.Model,
 					Color:       car.Color,
@@ -198,6 +198,43 @@ func main() {
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(resp)
+		})
+		r.Get("/{numberplate}", func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+
+			numberplate := chi.URLParam(r, "numberplate")
+			var car entity.Car
+
+			type carDetailResp struct {
+				Numberplate string `json:"numberplate"`
+				Model       string `json:"model"`
+				Color       string `json:"color"`
+				Serial      string `json:"serial"`
+			}
+
+			err = db.GetContext(ctx, &car, `SELECT numberplate, model, color, serial FROM car WHERE numberplate = ?`, numberplate)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					log.Println("car not found")
+					w.Header().Set("Content-Type", "application/problem+json")
+					w.WriteHeader(http.StatusBadRequest)
+					// TODO: RFC 7807 compliant error response
+					return
+				}
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(carDetailResp{
+				Numberplate: car.Numberplate,
+				Model:       car.Model,
+				Color:       car.Color,
+				Serial:      car.Serial,
+			})
 		})
 	})
 
