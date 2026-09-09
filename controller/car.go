@@ -50,7 +50,7 @@ func (controller *CarController) Create(w http.ResponseWriter, r *http.Request) 
 		// TODO: RFC 7807 compliant error response
 		return
 	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		log.Println(err)
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusBadRequest)
