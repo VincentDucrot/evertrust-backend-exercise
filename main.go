@@ -2,7 +2,9 @@ package main
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"evertrust-backend-exercise/config"
 	"evertrust-backend-exercise/entity"
 	"evertrust-backend-exercise/service"
@@ -108,6 +110,59 @@ func main() {
 			}
 
 			w.WriteHeader(http.StatusNoContent)
+		})
+	})
+	r.Route("/cars", func(r chi.Router) {
+		r.Post("/", func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+
+			type registerReq struct {
+				Numberplate string `json:"numberplate"`
+				Model       string `json:"model"`
+				Color       string `json:"color"`
+				Serial      string `json:"serial"`
+			}
+
+			var req registerReq
+
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusBadRequest)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			var car entity.Car
+
+			err := db.GetContext(ctx, &car, `SELECT numberplate, model, color, serial FROM car WHERE numberplate = ?`, req.Numberplate)
+			if err == nil {
+				log.Println("car already registered")
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusConflict)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusBadRequest)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			_, err = db.ExecContext(ctx, `INSERT INTO car(numberplate, model, color, serial) VALUES (?, ?, ?, ?)`, req.Numberplate, req.Model, req.Color, req.Serial) // TODO: Make serial unique?
+			if err != nil {
+				log.Println("car already registered")
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusConflict)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			w.WriteHeader(http.StatusCreated)
+			json.NewEncoder(w).Encode(req)
+
 		})
 	})
 
