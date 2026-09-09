@@ -241,7 +241,7 @@ func main() {
 
 			numberplate := chi.URLParam(r, "numberplate")
 			if numberplate == "" {
-				log.Println(err)
+				log.Println("numberplate is required")
 				w.Header().Set("Content-Type", "application/problem+json")
 				w.WriteHeader(http.StatusBadRequest)
 				// TODO: RFC 7807 compliant error response
@@ -275,7 +275,7 @@ func main() {
 
 			var car entity.Car
 
-			err = tx.GetContext(ctx, &car, `SELECT numberplate, model, color, serial FROM car WHERE numberplate = ?`, numberplate)
+			err = tx.GetContext(ctx, &car, `SELECT numberplate, model, color, serial FROM car WHERE numberplate = ? FOR UPDATE`, numberplate)
 			if err != nil {
 				if errors.Is(err, sql.ErrNoRows) {
 					log.Println("car not found")
@@ -309,6 +309,43 @@ func main() {
 				"color":       req.Color,
 				"serial":      req.Serial,
 			})
+		})
+		r.Delete("/{numberplate}", func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+
+			numberplate := chi.URLParam(r, "numberplate")
+			if numberplate == "" {
+				log.Println("numberplate is required")
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			var car entity.Car
+
+			err = db.GetContext(ctx, &car, `SELECT numberplate FROM car WHERE numberplate = ?`, numberplate)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					log.Println("car not found")
+					w.Header().Set("Content-Type", "application/problem+json")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			_, err = db.ExecContext(ctx, `DELETE FROM car WHERE numberplate=?`, numberplate)
+			if err != nil {
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			w.WriteHeader(http.StatusNoContent)
 		})
 	})
 
