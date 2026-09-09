@@ -1,0 +1,260 @@
+package controller
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"evertrust-backend-exercise/entity"
+	"log"
+	"net/http"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/jmoiron/sqlx"
+)
+
+type CarController struct {
+	db *sqlx.DB
+}
+
+func NewCarController(db *sqlx.DB) *CarController {
+	return &CarController{db: db}
+}
+
+func (controller *CarController) Create(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	type registerReq struct {
+		Numberplate string `json:"numberplate"`
+		Model       string `json:"model"`
+		Color       string `json:"color"`
+		Serial      string `json:"serial"`
+	}
+
+	var req registerReq
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Println(err)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusBadRequest)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+
+	var car entity.Car
+
+	err := controller.db.GetContext(ctx, &car, `SELECT numberplate, model, color, serial FROM car WHERE numberplate = ?`, req.Numberplate)
+	if err == nil {
+		log.Println("car already registered")
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusConflict)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		log.Println(err)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusBadRequest)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+
+	_, err = controller.db.ExecContext(ctx, `INSERT INTO car(numberplate, model, color, serial) VALUES (?, ?, ?, ?)`, req.Numberplate, req.Model, req.Color, req.Serial) // TODO: Make serial unique?
+	if err != nil {
+		log.Println("car already registered")
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(req)
+}
+
+func (controller *CarController) GetAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	type listCarsResp struct {
+		Numberplate string `json:"numberplate"`
+		Model       string `json:"model"`
+		Color       string `json:"color"`
+		Serial      string `json:"serial"`
+	}
+
+	var cars entity.Cars
+
+	err := controller.db.SelectContext(ctx, &cars, `SELECT numberplate, model, color, serial FROM car`)
+	if err != nil {
+		log.Println("car already registered")
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+
+	// TODO: Make function
+	resp := make([]listCarsResp, len(cars))
+	for i, car := range cars {
+		resp[i] = listCarsResp{
+			Numberplate: car.Numberplate,
+			Model:       car.Model,
+			Color:       car.Color,
+			Serial:      car.Serial,
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (controller *CarController) Get(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	numberplate := chi.URLParam(r, "numberplate")
+	var car entity.Car
+
+	type carDetailResp struct {
+		Numberplate string `json:"numberplate"`
+		Model       string `json:"model"`
+		Color       string `json:"color"`
+		Serial      string `json:"serial"`
+	}
+
+	err := controller.db.GetContext(ctx, &car, `SELECT numberplate, model, color, serial FROM car WHERE numberplate = ?`, numberplate)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Println("car not found")
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusBadRequest)
+			// TODO: RFC 7807 compliant error response
+			return
+		}
+		log.Println(err)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(carDetailResp{
+		Numberplate: car.Numberplate,
+		Model:       car.Model,
+		Color:       car.Color,
+		Serial:      car.Serial,
+	})
+}
+
+func (controller *CarController) Update(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	numberplate := chi.URLParam(r, "numberplate")
+	if numberplate == "" {
+		log.Println("numberplate is required")
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusBadRequest)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+
+	type updateCarReq struct {
+		Model  string `json:"model"`
+		Color  string `json:"color"`
+		Serial string `json:"serial"`
+	}
+	var req updateCarReq
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Println(err)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusBadRequest)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+
+	tx, err := controller.db.BeginTxx(ctx, nil)
+	if err != nil {
+		log.Println(err)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+	defer tx.Rollback()
+
+	var car entity.Car
+
+	err = tx.GetContext(ctx, &car, `SELECT numberplate, model, color, serial FROM car WHERE numberplate = ? FOR UPDATE`, numberplate)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Println("car not found")
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusBadRequest)
+			// TODO: RFC 7807 compliant error response
+			return
+		}
+		log.Println(err)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+
+	_, err = tx.ExecContext(ctx, `UPDATE car SET model=?, color=?, serial=? WHERE numberplate=?`, req.Model, req.Color, req.Serial, numberplate)
+	if err != nil {
+		log.Println(err)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+
+	tx.Commit()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"numberplate": car.Numberplate,
+		"model":       req.Model,
+		"color":       req.Color,
+		"serial":      req.Serial,
+	})
+}
+
+func (controller *CarController) Delete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	numberplate := chi.URLParam(r, "numberplate")
+	if numberplate == "" {
+		log.Println("numberplate is required")
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	var car entity.Car
+
+	err := controller.db.GetContext(ctx, &car, `SELECT numberplate FROM car WHERE numberplate = ?`, numberplate)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			log.Println("car not found")
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		log.Println(err)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		// TODO: RFC 7807 compliant error response
+		return
+	}
+
+	_, err = controller.db.ExecContext(ctx, `DELETE FROM car WHERE numberplate=?`, numberplate)
+	if err != nil {
+		log.Println(err)
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
