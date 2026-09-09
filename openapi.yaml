@@ -1,0 +1,467 @@
+openapi: 3.0.3
+
+info:
+  title: Backend Technical Test API
+  version: 1.0.0
+  description: |
+    ## Goal
+
+    Create a backend REST application, no frontend is expected.
+
+    A full database implementation is not required. The persistence strategy is up to you.
+
+    The application is composed of three concepts: **Token**, **Car**, and **Garage**.
+
+    This specification defines the API contract your application must respect.
+    The response schemas, persistence behaviour will all be evaluated.
+
+    Once you have finished, you will present your work and answer questions about your code,
+    the problems you encountered, and the choices you made. Be prepared to discuss what could be improved. 
+    Make sure you understand what you are submitting. Do not hesitate to ask questions.
+
+    ## Technical constraints
+
+    The language must be one of: **Java**, **Scala**, **Rust**, **Go**, or **JavaScript**.
+    The choice of framework is free.
+
+    ## Authentication
+
+    Most endpoints require a valid token passed in the `token-authentication` request header.
+    A token is obtained by calling `POST /tokens` and must be deleted after use.
+
+    ## Error handling
+
+    All errors must return a response with `Content-Type: application/problem+json` and a JSON body following the [RFC 7807 Problem Details](https://www.rfc-editor.org/rfc/rfc7807) format.
+    The choice of HTTP status codes is left to your discretion — use codes that best describe the error situation.
+
+servers:
+  - url: http://localhost:9000
+
+tags:
+  - name: Token
+    description: |
+      Manages the lifecycle of authentication tokens.
+
+      All Car and Garage endpoints require a valid token provided in the `token-authentication`
+      header. A token that has been deleted is no longer valid.
+
+  - name: Car
+    description: |
+      Manages cars. Each car is uniquely identified by its `numberplate`.
+
+      A valid token must be provided in the `token-authentication` header for all car endpoints.
+
+  - name: Garage
+    description: |
+      Manages garages. Each garage is uniquely identified by its `name`.
+
+      The `cars` field references `numberplate` of existing registered cars.
+      The number of cars in a garage cannot exceed its `occupationLimit`.
+      A car that is referenced by a garage cannot be deleted.
+
+      A valid token must be provided in the `token-authentication` header for all garage endpoints.
+
+components:
+
+  securitySchemes:
+    TokenAuthentication:
+      type: apiKey
+      in: header
+      name: token-authentication
+      description: A valid token obtained from `POST /tokens`.
+
+  schemas:
+
+    Token:
+      type: object
+      description: A freshly registered authentication token.
+      required: [token, expiration]
+      properties:
+        token:
+          type: string
+          description: The unique token value.
+          example: "a3f8c2d1-9e4b-4f7a-b6d5-123456789abc"
+        expiration:
+          type: string
+          format: date-time
+          description: The expiration date and time of the token.
+          example: "2026-03-26T10:00:00Z"
+
+    Car:
+      type: object
+      description: A car with all its fields.
+      required: [numberplate, model]
+      properties:
+        numberplate:
+          type: string
+          description: Unique identifier of the car.
+          example: "AQ-335-JX"
+        model:
+          type: string
+          description: Model name of the car.
+          example: "CLIO 3"
+        color:
+          type: string
+          description: Color of the car. Absent if never set.
+          example: "green"
+        serial:
+          type: string
+          description: Serial number of the car. Absent if never set.
+          example: "AFIHZFHUAHFAJBDFHVFEJA"
+
+    Garage:
+      type: object
+      description: A garage that can hold a limited number of cars.
+      required: [name, cars, occupationLimit]
+      properties:
+        name:
+          type: string
+          description: Unique name of the garage.
+          example: "Garage la place"
+        cars:
+          type: array
+          description: List of numberplates of cars currently in the garage.
+          items:
+            type: string
+          example: ["AQ-335-JX"]
+        occupationLimit:
+          type: integer
+          description: Maximum number of cars the garage can hold.
+          example: 1
+
+paths:
+
+  # ─────────────────────────────────────────
+  # Token
+  # ─────────────────────────────────────────
+
+  /tokens:
+    post:
+      summary: Create a token
+      operationId: createToken
+      description: Generates a new token. The token value must be stored by the caller and passed in the `token-authentication` header for all subsequent requests.
+      tags: [Token]
+      responses:
+        '201':
+          description: Token successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+
+  /tokens/{token}:
+    get:
+      summary: Check token validity
+      operationId: checkToken
+      description: Returns the expiration date of the token if it is still valid.
+      tags: [Token]
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The token value to check.
+      responses:
+        '200':
+          description: Token is valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+
+    delete:
+      summary: Delete a token
+      operationId: deleteToken
+      description: Deletes the given token. Once deleted, the token can no longer be used for authentication.
+      tags: [Token]
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The token value to delete.
+      responses:
+        '204':
+          description: Token successfully deleted.
+
+  # ─────────────────────────────────────────
+  # Car
+  # ─────────────────────────────────────────
+
+  /cars:
+    post:
+      summary: Register a new car
+      operationId: createCar
+      description: |
+        Creates a new car identified by its `numberplate`. The numberplate must be unique.
+      tags: [Car]
+      security:
+        - TokenAuthentication: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [numberplate, model]
+              properties:
+                numberplate:
+                  type: string
+                  example: "AQ-335-JX"
+                model:
+                  type: string
+                  example: "CLIO 3"
+                color:
+                  type: string
+                  example: "green"
+                serial:
+                  type: string
+                  example: "AFIHZFHUAHFAJBDFHVFEJA"
+      responses:
+        '201':
+          description: Car successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Car'
+
+    get:
+      summary: List all registered cars
+      operationId: listCars
+      description: Returns the list of all registered cars.
+      tags: [Car]
+      security:
+        - TokenAuthentication: []
+      responses:
+        '200':
+          description: List of cars.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Car'
+
+  /cars/{numberplate}:
+    get:
+      summary: Get a car by numberplate
+      operationId: getCar
+      description: Returns a single car identified by its numberplate.
+      tags: [Car]
+      security:
+        - TokenAuthentication: []
+      parameters:
+        - name: numberplate
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "AQ-335-JX"
+      responses:
+        '200':
+          description: Car found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Car'
+
+    put:
+      summary: Update a registered car
+      operationId: updateCar
+      description: Updates an existing car. All fields including optional ones can be set.
+      tags: [Car]
+      security:
+        - TokenAuthentication: []
+      parameters:
+        - name: numberplate
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "AQ-335-JX"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model]
+              properties:
+                model:
+                  type: string
+                  example: "CLIO 3"
+                color:
+                  type: string
+                  example: "green"
+                serial:
+                  type: string
+                  example: "AFIHZFHUAHFAJBDFHVFEJA"
+      responses:
+        '200':
+          description: Car successfully updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Car'
+
+    delete:
+      summary: Delete a car
+      operationId: deleteCar
+      description: |
+        Deletes a car identified by its numberplate.
+        A car that is currently referenced by a garage cannot be deleted.
+      tags: [Car]
+      security:
+        - TokenAuthentication: []
+      parameters:
+        - name: numberplate
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "AQ-335-JX"
+      responses:
+        '204':
+          description: Car successfully deleted.
+
+  # ─────────────────────────────────────────
+  # Garage
+  # ─────────────────────────────────────────
+
+  /garages:
+    post:
+      summary: Register a new garage
+      operationId: createGarage
+      description: |
+        Creates a new garage. The name must be unique.
+        The `cars` field contains a list of car numberplates — all referenced cars must exist.
+        The number of cars must not exceed `occupationLimit`.
+      tags: [Garage]
+      security:
+        - TokenAuthentication: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, cars, occupationLimit]
+              properties:
+                name:
+                  type: string
+                  example: "Garage la place"
+                cars:
+                  type: array
+                  items:
+                    type: string
+                  example: []
+                occupationLimit:
+                  type: integer
+                  example: 1
+      responses:
+        '201':
+          description: Garage successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Garage'
+
+    get:
+      summary: List all registered garages
+      operationId: listGarages
+      description: Returns the list of all registered garages.
+      tags: [Garage]
+      security:
+        - TokenAuthentication: []
+      responses:
+        '200':
+          description: List of garages.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Garage'
+
+  /garages/{name}:
+    get:
+      summary: Get a garage by name
+      operationId: getGarage
+      description: Returns a single garage identified by its name.
+      tags: [Garage]
+      security:
+        - TokenAuthentication: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "Garage la place"
+      responses:
+        '200':
+          description: Garage found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Garage'
+
+    put:
+      summary: Update a registered garage
+      operationId: updateGarage
+      description: |
+        Updates an existing garage.
+        All referenced cars must exist and the number of cars must not exceed `occupationLimit`.
+      tags: [Garage]
+      security:
+        - TokenAuthentication: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "Garage la place"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cars, occupationLimit]
+              properties:
+                cars:
+                  type: array
+                  items:
+                    type: string
+                  example: ["AQ-335-JX"]
+                occupationLimit:
+                  type: integer
+                  example: 1
+      responses:
+        '200':
+          description: Garage successfully updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Garage'
+
+    delete:
+      summary: Delete a garage
+      operationId: deleteGarage
+      description: Deletes a garage identified by its name.
+      tags: [Garage]
+      security:
+        - TokenAuthentication: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: "Garage la place"
+      responses:
+        '204':
+          description: Garage successfully deleted.
