@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"evertrust-backend-exercise/config"
 	"evertrust-backend-exercise/entity"
@@ -56,6 +57,37 @@ func main() {
 				map[string]string{
 					"token":      plaintext,
 					"expiration": time.Now().Add(time.Minute * 10).Format(time.RFC3339),
+				},
+			)
+		})
+		r.Get("/{token}", func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+
+			plaintext := chi.URLParam(r, "token")
+			hash := sha256.Sum256([]byte(plaintext))
+			token := entity.Token{}
+
+			err := db.GetContext(ctx, &token, "SELECT hash, expires_at, created_at FROM token WHERE hash = ?", hash[:])
+			if err != nil {
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+			if token.ExpiresAt.Before(time.Now()) {
+				log.Println("Token expired")
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusUnauthorized)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(
+				map[string]string{
+					"token":      plaintext,
+					"expiration": token.ExpiresAt.Format(time.RFC3339),
 				},
 			)
 		})
