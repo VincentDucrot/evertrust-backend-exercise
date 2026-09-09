@@ -9,3 +9,5 @@ type Car struct {
 	Serial      string    `db:"serial"`
 	CreatedAt   time.Time `db:"created_at"`
 }
+
+type Cars []Car

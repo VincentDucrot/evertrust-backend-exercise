@@ -155,14 +155,49 @@ func main() {
 			if err != nil {
 				log.Println("car already registered")
 				w.Header().Set("Content-Type", "application/problem+json")
-				w.WriteHeader(http.StatusConflict)
+				w.WriteHeader(http.StatusInternalServerError)
 				// TODO: RFC 7807 compliant error response
 				return
 			}
 
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(req)
+		})
+		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
 
+			type listCardsResp struct {
+				Numberplate string `json:"numberplate"`
+				Model       string `json:"model"`
+				Color       string `json:"color"`
+				Serial      string `json:"serial"`
+			}
+
+			var cars entity.Cars
+
+			err = db.SelectContext(ctx, &cars, `SELECT numberplate, model, color, serial FROM car`)
+			if err != nil {
+				log.Println("car already registered")
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			// TODO: Make function
+			resp := make([]listCardsResp, len(cars))
+			for i, car := range cars {
+				resp[i] = listCardsResp{
+					Numberplate: car.Numberplate,
+					Model:       car.Model,
+					Color:       car.Color,
+					Serial:      car.Serial,
+				}
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
 		})
 	})
 
