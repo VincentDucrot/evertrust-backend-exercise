@@ -53,6 +53,7 @@ func main() {
 			}
 
 			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
 			json.NewEncoder(w).Encode(
 				map[string]string{
 					"token":      plaintext,
