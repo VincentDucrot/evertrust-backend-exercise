@@ -236,6 +236,80 @@ func main() {
 				Serial:      car.Serial,
 			})
 		})
+		r.Put("/{numberplate}", func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+
+			numberplate := chi.URLParam(r, "numberplate")
+			if numberplate == "" {
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusBadRequest)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			type updateCarReq struct {
+				Model  string `json:"model"`
+				Color  string `json:"color"`
+				Serial string `json:"serial"`
+			}
+			var req updateCarReq
+
+			if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusBadRequest)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			tx, err := db.BeginTxx(ctx, nil)
+			if err != nil {
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+			defer tx.Rollback()
+
+			var car entity.Car
+
+			err = tx.GetContext(ctx, &car, `SELECT numberplate, model, color, serial FROM car WHERE numberplate = ?`, numberplate)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					log.Println("car not found")
+					w.Header().Set("Content-Type", "application/problem+json")
+					w.WriteHeader(http.StatusBadRequest)
+					// TODO: RFC 7807 compliant error response
+					return
+				}
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			_, err = tx.ExecContext(ctx, `UPDATE car SET model=?, color=?, serial=? WHERE numberplate=?`, req.Model, req.Color, req.Serial, numberplate)
+			if err != nil {
+				log.Println(err)
+				w.Header().Set("Content-Type", "application/problem+json")
+				w.WriteHeader(http.StatusInternalServerError)
+				// TODO: RFC 7807 compliant error response
+				return
+			}
+
+			tx.Commit()
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"numberplate": car.Numberplate,
+				"model":       req.Model,
+				"color":       req.Color,
+				"serial":      req.Serial,
+			})
+		})
 	})
 
 	http.ListenAndServe(":3333", r) // TODO: change this to a config
