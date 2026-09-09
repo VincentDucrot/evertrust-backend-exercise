@@ -1,61 +1,22 @@
 package main
 
 import (
-	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"evertrust-backend-exercise/config"
+	"evertrust-backend-exercise/controller"
 	"evertrust-backend-exercise/entity"
-	"evertrust-backend-exercise/service"
+	middleware2 "evertrust-backend-exercise/middleware"
 	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 )
-
-type Authenticator struct {
-	db *sqlx.DB
-}
-
-func NewAuthenticator(db *sqlx.DB) *Authenticator {
-	return &Authenticator{db: db}
-}
-
-func (middleware *Authenticator) Authenticate(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := r.Header.Get("token-authentication")
-
-		hash := sha256.Sum256([]byte(token))
-		var tokenEntity entity.Token
-
-		err := middleware.db.GetContext(r.Context(), &tokenEntity, "SELECT hash, expires_at, created_at FROM token WHERE hash = ?", hash[:])
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				log.Println("token not found")
-				w.Header().Set("Content-Type", "application/problem+json")
-				w.WriteHeader(http.StatusUnauthorized)
-				// TODO: RFC 7807 compliant error response
-				return
-			}
-			log.Println(err)
-		}
-		if tokenEntity.ExpiresAt.Before(time.Now()) {
-			log.Println("token expired")
-			w.Header().Set("Content-Type", "application/problem+json")
-			w.WriteHeader(http.StatusUnauthorized)
-			// TODO: RFC 7807 compliant error response
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
 
 func main() {
 	dbConfig, err := config.LoadDatabaseConfig()
@@ -69,88 +30,17 @@ func main() {
 	}
 	defer db.Close()
 
-	authenticator := NewAuthenticator(db)
+	authenticator := middleware2.NewAuthenticator(db)
+
+	tokenController := controller.NewTokenController(db)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 
 	r.Route("/tokens", func(r chi.Router) {
-		r.Post("/", func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-
-			plaintext, hash := service.NewToken()
-
-			token := entity.Token{
-				Hash:      hash[:],
-				ExpiresAt: time.Now().Add(time.Minute * 10), // TODO: change this to a config
-			}
-
-			_, err := db.ExecContext(ctx, `INSERT INTO token(hash, expires_at) VALUES (?, ?)`, token.Hash, token.ExpiresAt)
-			if err != nil {
-				log.Println(err)
-				w.Header().Set("Content-Type", "application/problem+json")
-				w.WriteHeader(http.StatusInternalServerError)
-				// TODO: RFC 7807 compliant error response
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(
-				map[string]string{
-					"token":      plaintext,
-					"expiration": time.Now().Add(time.Minute * 10).Format(time.RFC3339),
-				},
-			)
-		})
-		r.Get("/{token}", func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-
-			plaintext := chi.URLParam(r, "token")
-			hash := sha256.Sum256([]byte(plaintext))
-			token := entity.Token{}
-
-			err := db.GetContext(ctx, &token, "SELECT hash, expires_at, created_at FROM token WHERE hash = ?", hash[:])
-			if err != nil {
-				log.Println(err)
-				w.Header().Set("Content-Type", "application/problem+json")
-				w.WriteHeader(http.StatusInternalServerError)
-				// TODO: RFC 7807 compliant error response
-				return
-			}
-			if token.ExpiresAt.Before(time.Now()) {
-				log.Println("Token expired")
-				w.Header().Set("Content-Type", "application/problem+json")
-				w.WriteHeader(http.StatusUnauthorized)
-				// TODO: RFC 7807 compliant error response
-				return
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(
-				map[string]string{
-					"token":      plaintext,
-					"expiration": token.ExpiresAt.Format(time.RFC3339),
-				},
-			)
-		})
-		r.Delete("/{token}", func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-
-			plaintext := chi.URLParam(r, "token")
-			hash := sha256.Sum256([]byte(plaintext))
-
-			_, err := db.ExecContext(ctx, `DELETE FROM token WHERE hash=?`, hash[:])
-			if err != nil {
-				log.Println(err)
-				w.Header().Set("Content-Type", "application/problem+json")
-				w.WriteHeader(http.StatusInternalServerError)
-				// TODO: RFC 7807 compliant error response
-				return
-			}
-
-			w.WriteHeader(http.StatusNoContent)
-		})
+		r.Post("/", tokenController.CreateToken)
+		r.Get("/{token}", tokenController.GetToken)
+		r.Delete("/{token}", tokenController.DeleteToken)
 	})
 	r.Route("/cars", func(r chi.Router) {
 		r.Use(authenticator.Authenticate)
